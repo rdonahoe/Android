@@ -32,6 +32,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private GeomagneticField GMF;
     private float[] gravity;
     private float[] geomagnetic;
+    private float[] azimuthValues;
+    private int azimuthCount;
 
 
 
@@ -49,6 +51,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
         gravity = new float[3];
         geomagnetic = new float[3];
+        azimuthValues = new float[10];
+        azimuthCount = 0;
 
         locManager = (LocationManager) getSystemService(LOCATION_SERVICE);
         try {
@@ -126,44 +130,51 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     public void onSensorChanged(SensorEvent event) {
 
         if(event.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
-            gravity[0] = event.values[0];
-            gravity[1] = event.values[1];
-            gravity[2] = event.values[2];
+            System.arraycopy(event.values, 0, gravity, 0, 3);
         }
         else if(event.sensor.getType() == Sensor.TYPE_MAGNETIC_FIELD) {
-            geomagnetic[0] = event.values[0];
-            geomagnetic[1] = event.values[1];
-            geomagnetic[2] = event.values[2];
+            System.arraycopy(event.values, 0, geomagnetic, 0, 3);
         }
 
         float[] R = new float[9];
-        SensorManager.getRotationMatrix(R, null, gravity, geomagnetic);
+        if(SensorManager.getRotationMatrix(R, null, gravity, geomagnetic) && GMF != null) {
 
-        float[] val = new float[3];
-        SensorManager.getOrientation(R, val);
+            float[] val = new float[3];
+            SensorManager.getOrientation(R, val);
 
-        // newDegree points to magnetic north. If gmf object was instantiated, it can be
-        // used to find the declination offset that is used to calculate true north
-        float newDegree = (float) Math.toDegrees(val[0]);
-        if(GMF != null) {
-            newDegree += GMF.getDeclination();
+            // newDegree points to magnetic north. If gmf object was instantiated, it can be
+            // used to find the declination offset that is used to calculate true north
+            float newDegree = (float) Math.toDegrees(val[0]);
+
+            // using mod 10 makes it so we don't have to put the variable back to zero
+            azimuthValues[azimuthCount % 10] = newDegree;
+            azimuthCount++;
+
+            // only perform once every tenth azimuth value
+            if(azimuthCount % 10 == 0) {
+                // obtain average from our azimuth values to make gui look smooth
+                float avg = 0;
+                for(float n : azimuthValues) { avg += n; }
+                avg /= 10;
+                newDegree = avg + GMF.getDeclination();
+
+                // convert degree to 360 scale instead of -180 to 180
+                newDegree = (newDegree + 360) % 360;
+
+                // create rotation object, declaring beginning and end point, and where to pivot.
+                // The pivot point in this case is the center
+                RotateAnimation ra = new RotateAnimation(
+                        currentDegree,
+                        -newDegree,
+                        Animation.RELATIVE_TO_SELF, 0.5f,
+                        Animation.RELATIVE_TO_SELF, 0.5f);
+
+                ra.setDuration(200);
+                ra.setFillAfter(true);
+
+                compView.startAnimation(ra);
+                currentDegree = -newDegree;
+            }
         }
-
-        // convert degree to 360 scale instead of -180 to 180
-        newDegree = (newDegree + 360) % 360;
-
-        // create rotation object, declaring beginning and end point, and where to pivot.
-        // The pivot point in this case is the center
-        RotateAnimation ra = new RotateAnimation(
-                currentDegree,
-                -newDegree,
-                Animation.RELATIVE_TO_SELF, 0.5f,
-                Animation.RELATIVE_TO_SELF, 0.5f);
-
-        ra.setDuration(250);
-        ra.setFillAfter(true);
-
-        compView.startAnimation(ra);
-        currentDegree = -newDegree;
     }
 }
